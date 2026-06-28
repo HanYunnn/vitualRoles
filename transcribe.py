@@ -7,9 +7,6 @@ from moviepy import VideoFileClip
 # 載入環境變數
 load_dotenv(override=True)
 
-# 初始化 OpenAI 客戶端
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 def extract_audio(video_path, audio_output_path):
     """
     從影片中提取音訊，轉存為 mp3 以減少上傳檔案大小
@@ -20,11 +17,12 @@ def extract_audio(video_path, audio_output_path):
     video.close()
     print(f"音訊提取完成：{audio_output_path}")
 
-def transcribe_audio(audio_path, output_json_path):
+def transcribe_audio(audio_path, output_json_path, openai_key=None):
     """
     呼叫 OpenAI Whisper API 取得逐字時間軸 (Word-level timestamps)
     """
     print(f"正在傳送 {audio_path} 至 OpenAI Whisper API 進行轉譯...")
+    client = OpenAI(api_key=openai_key or os.getenv("OPENAI_API_KEY"))
     with open(audio_path, "rb") as audio_file:
         response = client.audio.transcriptions.create(
             file=audio_file,
