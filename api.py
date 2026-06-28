@@ -1054,6 +1054,26 @@ def upload_image(file: UploadFile = File(...)):
         return {"success": False, "error": f"圖片處理失敗：{e}"}
     return {"success": True, "image_url": _gurl("base_image.png")}
 
+# --- 上傳自訂字型：存到本 session 的 fonts 目錄，render 與預覽都用得到 ---
+@app.post("/api/upload_font")
+def upload_font(file: UploadFile = File(...)):
+    name = os.path.basename(file.filename or "font")
+    if not name.lower().endswith((".ttf", ".otf", ".ttc")):
+        return {"success": False, "error": "請上傳 .ttf / .otf / .ttc 字型檔"}
+    fdir = os.path.join(WORK_ROOT, _sid(), "fonts")
+    os.makedirs(fdir, exist_ok=True)
+    safe = _re.sub(r"[^A-Za-z0-9_.\-]", "_", name)
+    path = os.path.join(fdir, safe)
+    try:
+        with open(path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        from PIL import ImageFont
+        fam, _style = ImageFont.truetype(path, 20).getname()
+    except Exception as e:
+        return {"success": False, "error": f"字型處理失敗：{e}"}
+    return {"success": True, "family": fam or safe, "file": safe,
+            "url": f"/assets/work/{_sid()}/fonts/{safe}"}
+
 # --- 上傳已有影片：當作剪輯台底層影片，並抽音軌給 Whisper 上字幕 ---
 @app.post("/api/upload_video")
 def upload_video(file: UploadFile = File(...)):
@@ -1133,8 +1153,10 @@ _FONT_FILES = {
 _FONT_FALLBACK = [("~/Library/Fonts/NotoSansCJKtc-Black.otf", 0), ("/System/Library/Fonts/STHeiti Medium.ttc", 0)]
 
 # ── 掃描系統已安裝字型：家族名 → (檔案, index)，挑最粗的 face 對齊預覽的 900 ──
+# 含 macOS + Linux(HF/伺服器) 目錄；Linux 字型在子目錄 → 需遞迴
 _FONT_DIRS = ["/System/Library/Fonts", "/System/Library/Fonts/Supplemental",
-              "/Library/Fonts", os.path.expanduser("~/Library/Fonts")]
+              "/Library/Fonts", os.path.expanduser("~/Library/Fonts"),
+              "/usr/share/fonts", "/usr/local/share/fonts", os.path.expanduser("~/.fonts")]
 _FONT_INDEX = None   # family(lower) -> (path, index)
 _FONT_LIST = None    # 排序後的家族名清單（給前端下拉）
 
@@ -1153,30 +1175,42 @@ def _scan_fonts():
     from PIL import ImageFont
     best = {}   # family_lower -> (rank, family, path, index)
     for d in _FONT_DIRS:
-        try:
-            names = os.listdir(d)
-        except OSError:
-            continue
-        for fn in names:
-            if not fn.lower().endswith((".ttf", ".otf", ".ttc")):
-                continue
-            path = os.path.join(d, fn)
-            is_ttc = fn.lower().endswith(".ttc")
-            for idx in range(0, 40):
-                try:
-                    f = ImageFont.truetype(path, 20, index=idx)
-                    fam, style = f.getname()
-                except Exception:
-                    break
-                if fam and not fam.startswith(".") and "?" not in fam and fam.isprintable():   # 跳過隱藏/亂碼名
-                    r = _style_rank(style)
-                    k = fam.lower()
-                    if k not in best or r > best[k][0]:
-                        best[k] = (r, fam, path, idx)
-                if not is_ttc:
-                    break
+        for root, _dirs, files in os.walk(d):   # 遞迴(Linux 字型在子目錄如 opentype/noto/)
+            for fn in files:
+                if not fn.lower().endswith((".ttf", ".otf", ".ttc")):
+                    continue
+                path = os.path.join(root, fn)
+                is_ttc = fn.lower().endswith(".ttc")
+                for idx in range(0, 40):
+                    try:
+                        f = ImageFont.truetype(path, 20, index=idx)
+                        fam, style = f.getname()
+                    except Exception:
+                        break
+                    if fam and not fam.startswith(".") and "?" not in fam and fam.isprintable():   # 跳過隱藏/亂碼名
+                        r = _style_rank(style)
+                        k = fam.lower()
+                        if k not in best or r > best[k][0]:
+                            best[k] = (r, fam, path, idx)
+                    if not is_ttc:
+                        break
     _FONT_INDEX = {k: (v[2], v[3]) for k, v in best.items()}
     _FONT_LIST = sorted({v[1] for v in best.values()}, key=str.lower)
+
+def _scanned_cjk_fallback():
+    """從掃描結果挑一個 CJK 字型當保底（Linux 伺服器沒有 macOS 字型時靠這個）。"""
+    try:
+        _scan_fonts()
+    except Exception:
+        return []
+    for n in ("noto sans cjk tc", "noto sans tc", "noto sans cjk sc", "noto serif cjk tc",
+              "noto sans cjk jp", "heiti tc", "pingfang tc", "songti tc"):
+        if _FONT_INDEX and n in _FONT_INDEX:
+            return [_FONT_INDEX[n]]
+    for k, v in (_FONT_INDEX or {}).items():
+        if "cjk" in k or "noto sans" in k:
+            return [v]
+    return []
 
 @app.get("/api/fonts")
 def list_fonts():
@@ -1186,17 +1220,48 @@ def list_fonts():
 
 def _cjk_font(size, key="heiti"):
     from PIL import ImageFont
-    candidates = _FONT_FILES.get(key)
-    if candidates is None:        # 不是預設 key → 當成系統字型家族名解析
+    candidates = []
+    up = _session_font(key)                 # 使用者上傳字型優先
+    if up:
+        candidates.append(up)
+    preset = _FONT_FILES.get(key)
+    if preset is not None:
+        candidates += preset
+    else:                                   # 不是預設 key → 當成系統字型家族名
         _scan_fonts()
         hit = _FONT_INDEX.get((key or "").lower())
-        candidates = [hit] if hit else []
-    for p, idx in candidates + _FONT_FALLBACK:
+        if hit:
+            candidates.append(hit)
+    candidates += _FONT_FALLBACK + _scanned_cjk_fallback()   # 保底：macOS 預設 + 伺服器 CJK
+    for p, idx in candidates:
         try:
             return ImageFont.truetype(os.path.expanduser(p), size, index=idx)
         except Exception:
             continue
     return ImageFont.load_default()
+
+def _session_font(key):
+    """使用者上傳到本 session fonts 目錄的字型：檔名或家族名相符就用。"""
+    if not key:
+        return None
+    fdir = os.path.join(WORK_ROOT, _sid(), "fonts")
+    if not os.path.isdir(fdir):
+        return None
+    from PIL import ImageFont
+    kl = key.lower()
+    for fn in os.listdir(fdir):
+        if not fn.lower().endswith((".ttf", ".otf", ".ttc")):
+            continue
+        path = os.path.join(fdir, fn)
+        if kl in fn.lower():
+            return (path, 0)
+        try:
+            fam, _ = ImageFont.truetype(path, 20).getname()
+            if fam and fam.lower() == kl:
+                return (path, 0)
+        except Exception:
+            pass
+    return None
 
 @app.post("/api/render")
 def render_video():

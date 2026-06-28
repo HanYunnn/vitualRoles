@@ -264,7 +264,21 @@ export async function composite(fgVideo: string, bgMode: string, key: string): P
   }
 }
 
-// ── 系統字型清單 ──────────────────────────────────────────────────────────────
+// ── 字型 ──────────────────────────────────────────────────────────────────────
+/** 上傳自訂字型(.ttf/.otf/.ttc)到本 session；回家族名與檔案 URL(供 @font-face 預覽)。 */
+export async function uploadFont(file: File): Promise<{ family?: string; url?: string; error?: string }> {
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(apiUrl('/api/upload_font'), { method: 'POST', body: form, headers: keyHeaders() });
+    const data = (await res.json()) as { success: boolean; family?: string; url?: string; error?: string };
+    if (data.success && data.family && data.url) return { family: data.family, url: apiUrl(data.url) };
+    return { error: data.error || '上傳失敗' };
+  } catch {
+    return { error: '無法連線後端' };
+  }
+}
+
 /** 取得電腦已安裝的字型家族名清單（給字幕字型下拉）。 */
 export async function listFonts(): Promise<string[]> {
   try {

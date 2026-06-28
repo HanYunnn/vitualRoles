@@ -6,9 +6,19 @@ import { Slider, ColorField } from '../components/shared';
 import { EditorProvider, useEditor, fmtTC, VIDEO_H } from './editorStore';
 import type { SubStyle } from '../data';
 import { FONTS, fontCss } from '../data';
-import { transcribe, searchPexels, autoBroll, rerollBroll, listFonts, genAssetUrl } from '../api';
+import { transcribe, searchPexels, autoBroll, rerollBroll, listFonts, genAssetUrl, uploadFont } from '../api';
 
 let _sysFontsCache: string[] | null = null;   // 整個 session 只抓一次
+
+type UpFont = { family: string; url: string };
+const loadUpFonts = (): UpFont[] => { try { return JSON.parse(localStorage.getItem('vlt-fonts') || '[]'); } catch { return []; } };
+async function registerFont(family: string, url: string) {
+  try {
+    const ff = new FontFace(family, `url(${url})`);
+    await ff.load();
+    (document as unknown as { fonts: { add: (f: FontFace) => void } }).fonts.add(ff);
+  } catch { /* 載入失敗就略過(預覽會 fallback) */ }
+}
 
 const isVideoUrl = (u?: string) => !!u && /\.(mp4|mov|webm|m4v)(\?|$)/i.test(u);
 
@@ -245,6 +255,8 @@ function BrollTab() {
 function StyleTab() {
   const ed = useEditor();
   const [sysFonts, setSysFonts] = useState<string[]>(_sysFontsCache ?? []);
+  const [upFonts, setUpFonts] = useState<UpFont[]>(loadUpFonts);
+  const [fontBusy, setFontBusy] = useState(false);
   useEffect(() => {
     if (_sysFontsCache) return;
     listFonts().then((f) => {
@@ -252,6 +264,18 @@ function StyleTab() {
       setSysFonts(f);
     });
   }, []);
+  useEffect(() => { upFonts.forEach((f) => registerFont(f.family, f.url)); }, []); // 重整後重新註冊 @font-face
+  const doUploadFont = async (file: File) => {
+    setFontBusy(true);
+    const r = await uploadFont(file);
+    setFontBusy(false);
+    if (r.error || !r.family || !r.url) { alert(r.error || '上傳失敗'); return; }
+    await registerFont(r.family, r.url);
+    const next = [...upFonts.filter((f) => f.family !== r.family), { family: r.family, url: r.url }];
+    setUpFonts(next);
+    localStorage.setItem('vlt-fonts', JSON.stringify(next));
+    if (sub) ed.updateSubStyle(sub.id, { font: r.family });   // 上傳後直接套用到目前字幕
+  };
   const sub = ed.subtitles.find((s) => s.id === ed.selSubId) ?? null;
   const fills = ['#c4d600', '#ffffff', '#ffd166', '#ff6b6b', '#6a5bff'];
   const strokes = ['#000000', '#3b29ff', '#7c3aed', '#1a1500'];
@@ -274,14 +298,21 @@ function StyleTab() {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <label style={monoLabel}>字體</label>
-          <button
-            className="vlt-btn ghost sm"
-            style={{ padding: '3px 9px', fontSize: 11 }}
-            onClick={() => ed.updateAllSubStyle({ font: st.font })}
-            title="把目前這句的字體套用到所有字幕"
-          >
-            套用全部
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <label className="vlt-btn ghost sm" style={{ padding: '3px 9px', fontSize: 11, cursor: 'pointer' }} title="上傳自己的字型檔(.ttf/.otf/.ttc)，預覽與 render 都會用它">
+              {fontBusy ? '上傳中…' : '↑ 上傳字體'}
+              <input type="file" accept=".ttf,.otf,.ttc,font/*" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) doUploadFont(f); e.target.value = ''; }} />
+            </label>
+            <button
+              className="vlt-btn ghost sm"
+              style={{ padding: '3px 9px', fontSize: 11 }}
+              onClick={() => ed.updateAllSubStyle({ font: st.font })}
+              title="把目前這句的字體套用到所有字幕"
+            >
+              套用全部
+            </button>
+          </div>
         </div>
         <select
           className="vlt-inp"
@@ -296,8 +327,17 @@ function StyleTab() {
               </option>
             ))}
           </optgroup>
+          {upFonts.length > 0 && (
+            <optgroup label="我上傳的字型">
+              {upFonts.map((f) => (
+                <option key={f.family} value={f.family}>
+                  {f.family}
+                </option>
+              ))}
+            </optgroup>
+          )}
           {sysFonts.length > 0 && (
-            <optgroup label="電腦已安裝字型">
+            <optgroup label="伺服器字型">
               {sysFonts.map((f) => (
                 <option key={f} value={f}>
                   {f}

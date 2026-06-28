@@ -4,6 +4,7 @@ FROM python:3.12-slim
 # ffmpeg 給 moviepy 合成/render；libgl/glib 給 onnxruntime/opencv
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg libgl1 libglib2.0-0 \
+    fonts-noto-cjk fonts-noto-cjk-extra fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Hugging Face Spaces 以 uid 1000 執行 → 建立可寫的使用者與家目錄
