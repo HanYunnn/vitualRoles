@@ -1,0 +1,35 @@
+# === 機密：絕對不能上傳 ===
+.env
+.env.local
+*.key
+
+# === Python ===
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# === Node / 前端 ===
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
+# === 產出物（執行時生成，不進版控）===
+generated_assets/
+broll_assets/
+saved_scenes/
+*.mp4
+*.mp3
+
+# === 模型快取 ===
+.u2net/
+
+# === 系統 / 編輯器 ===
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Claude Code 本機設定
+.claude/settings.local.json

@@ -1,0 +1,39 @@
+{
+  "brolls": [
+    {
+      "start": 4.46,
+      "end": 7.68,
+      "query": "office teamwork conflict",
+      "reason": "插入同事間協作或溝通困難的畫面，增強對話中信任與交代任務的挑戰。",
+      "video_path": "broll_assets/broll_0_office_teamwork_conflict.mp4"
+    },
+    {
+      "start": 11.84,
+      "end": 13.96,
+      "query": "task management stress",
+      "reason": "顯示追蹤任務進度的畫面，強調重複的監督行為。",
+      "video_path": "broll_assets/broll_1_task_management_stress.mp4"
+    },
+    {
+      "start": 18.84,
+      "end": 21.18,
+      "query": "team meeting failure",
+      "reason": "展示一個會議或計劃失敗的場景，表現出缺乏信任後發生的潛在問題。",
+      "video_path": "broll_assets/broll_2_team_meeting_failure.mp4"
+    },
+    {
+      "start": 26.22,
+      "end": 29.64,
+      "query": "credit score growth",
+      "reason": "插入信用累積或評價的畫面，反映個人在職場上的信譽建設。",
+      "video_path": "broll_assets/broll_3_credit_score_growth.mp4"
+    },
+    {
+      "start": 35.92,
+      "end": 39.06,
+      "query": "successful task completion",
+      "reason": "展示任務如期完成的正面形象，讓人看到信用的正向建立。",
+      "video_path": "broll_assets/broll_4_successful_task_completion.mp4"
+    }
+  ]
+}
