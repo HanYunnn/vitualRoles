@@ -7,10 +7,9 @@ from openai import OpenAI
 # 載入環境變數
 load_dotenv(override=True)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
-def analyze_broll_placements(transcription_json_path):
+def analyze_broll_placements(transcription_json_path, openai_key=None):
     """
     使用 GPT-4o 分析逐字稿，找出適合插入 B-Roll 的段落，並給出 Pexels 英文關鍵字。
     """
@@ -55,6 +54,7 @@ def analyze_broll_placements(transcription_json_path):
 {json.dumps(segments, ensure_ascii=False, indent=2)}
 """
 
+    client = OpenAI(api_key=openai_key or os.getenv("OPENAI_API_KEY"))
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -68,17 +68,18 @@ def analyze_broll_placements(transcription_json_path):
     print("GPT-4o 決策完成！")
     return result
 
-def fetch_and_download_pexels_video(query, output_dir, index, pick=0):
+def fetch_and_download_pexels_video(query, output_dir, index, pick=0, pexels_key=None):
     """
     呼叫 Pexels API 搜尋『直式』影片並下載。pick 可選不同搜尋結果（用於「換一張」）。
     """
-    if not PEXELS_API_KEY:
+    key = pexels_key or PEXELS_API_KEY
+    if not key:
         print("⚠️ 未偵測到 PEXELS_API_KEY，將跳過下載。")
         return None
 
     # 直式素材：滿版 9:16 裁切才不會怪
     url = f"https://api.pexels.com/videos/search?query={requests.utils.quote(query)}&per_page=15&orientation=portrait"
-    headers = {"Authorization": PEXELS_API_KEY}
+    headers = {"Authorization": key}
 
     try:
         response = requests.get(url, headers=headers, timeout=15)
@@ -122,22 +123,22 @@ def fetch_and_download_pexels_video(query, output_dir, index, pick=0):
         
     return None
 
-def generate_broll_plan(transcription_json, output_plan_json):
+def generate_broll_plan(transcription_json, output_plan_json, openai_key=None, pexels_key=None):
     """
     主控制函數：分析、搜尋、下載並輸出 B-Roll 計劃表
     """
     # 建立下載目錄
     assets_dir = "broll_assets"
     os.makedirs(assets_dir, exist_ok=True)
-    
+
     # 1. 呼叫 GPT-4o 分析點位
-    analysis = analyze_broll_placements(transcription_json)
-    
+    analysis = analyze_broll_placements(transcription_json, openai_key=openai_key)
+
     # 2. 遍歷點位下載影片
     plan = []
     for i, placement in enumerate(analysis.get("placements", [])):
         q = placement["search_query"]
-        local_path = fetch_and_download_pexels_video(q, assets_dir, i)
+        local_path = fetch_and_download_pexels_video(q, assets_dir, i, pexels_key=pexels_key)
         
         plan.append({
             "start": placement["start"],

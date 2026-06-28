@@ -5,10 +5,39 @@
 // has something to preview / download offline.
 export const FALLBACK_VIDEO = 'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
 
+// 部署時：Vercel 上設環境變數 VITE_API_BASE 指向後端網址（如 https://xxx.onrender.com）。
+// 本機開發留空 → 走 Vite proxy。
+const API_BASE = ((import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE) || '';
+export const apiUrl = (path: string) => API_BASE + path;
+
+// 使用者自帶金鑰：存在瀏覽器 localStorage，每次請求以 header 帶給後端（不存伺服器）
+const KEY_MAP: Record<string, string> = {
+  OPENAI_API_KEY: 'X-OPENAI-API-KEY',
+  FAL_KEY: 'X-FAL-KEY',
+  GEMINI_API_KEY: 'X-GEMINI-API-KEY',
+  HEDRA_API_KEY: 'X-HEDRA-API-KEY',
+  FISH_AUDIO_API_KEY: 'X-FISH-AUDIO-API-KEY',
+  PEXELS_API_KEY: 'X-PEXELS-API-KEY',
+  ELEVENLABS_API_KEY: 'X-ELEVENLABS-API-KEY',
+};
+export const KEY_FIELDS = Object.keys(KEY_MAP);
+export function getStoredKeys(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem('vlt-keys') || '{}'); } catch { return {}; }
+}
+export function setStoredKeys(k: Record<string, string>) {
+  localStorage.setItem('vlt-keys', JSON.stringify(k));
+}
+export function keyHeaders(): Record<string, string> {
+  const k = getStoredKeys();
+  const h: Record<string, string> = {};
+  for (const [name, hdr] of Object.entries(KEY_MAP)) if (k[name]) h[hdr] = k[name];
+  return h;
+}
+
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...keyHeaders() },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} → ${res.status}`);
@@ -227,7 +256,7 @@ export async function composite(fgVideo: string, bgMode: string, key: string): P
 /** 取得電腦已安裝的字型家族名清單（給字幕字型下拉）。 */
 export async function listFonts(): Promise<string[]> {
   try {
-    const res = await fetch('/api/fonts');
+    const res = await fetch(apiUrl('/api/fonts'), { headers: keyHeaders() });
     const data = (await res.json()) as { fonts?: string[] };
     return data.fonts ?? [];
   } catch {
@@ -239,7 +268,7 @@ export async function listFonts(): Promise<string[]> {
 /** 搜尋 Pexels 直式素材，回傳一張圖片網址。 */
 export async function searchPexels(query: string): Promise<{ url?: string; error?: string }> {
   try {
-    const res = await fetch(`/api/pexels?q=${encodeURIComponent(query)}`);
+    const res = await fetch(apiUrl(`/api/pexels?q=${encodeURIComponent(query)}`), { headers: keyHeaders() });
     const data = (await res.json()) as { success: boolean; url?: string; error?: string };
     if (data.success && data.url) return { url: data.url };
     return { error: data.error || '找不到素材' };
@@ -289,7 +318,7 @@ export async function uploadImage(file: File): Promise<{ url?: string; error?: s
   try {
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch('/api/upload_image', { method: 'POST', body: form });
+    const res = await fetch(apiUrl('/api/upload_image'), { method: 'POST', body: form, headers: keyHeaders() });
     if (!res.ok) return { error: `上傳失敗（${res.status}）` };
     const data = (await res.json()) as { success: boolean; image_url?: string; error?: string };
     if (data.success && data.image_url) return { url: `${data.image_url}?t=${Date.now()}` };
@@ -304,7 +333,7 @@ export async function uploadVideo(file: File): Promise<{ url?: string; warning?:
   try {
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch('/api/upload_video', { method: 'POST', body: form });
+    const res = await fetch(apiUrl('/api/upload_video'), { method: 'POST', body: form, headers: keyHeaders() });
     if (!res.ok) return { error: `上傳失敗（${res.status}）` };
     const data = (await res.json()) as { success: boolean; video_url?: string; warning?: string; error?: string };
     if (data.success && data.video_url) return { url: `${data.video_url}?t=${Date.now()}`, warning: data.warning };
@@ -357,7 +386,7 @@ export async function saveProject(state: unknown): Promise<void> {
 /** Load the saved project: prefer the backend file, fall back to localStorage. */
 export async function loadProject(): Promise<unknown | null> {
   try {
-    const res = await fetch('/api/project/load');
+    const res = await fetch(apiUrl('/api/project/load'), { headers: keyHeaders() });
     if (res.ok) {
       const data = (await res.json()) as { exists?: boolean; project?: unknown };
       if (data.exists && data.project) return data.project;

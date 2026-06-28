@@ -1,0 +1,12 @@
+venv/
+frontend/node_modules/
+frontend/dist/
+generated_assets/
+broll_assets/
+saved_scenes/
+__pycache__/
+*.pyc
+.git/
+.env
+*.mp4
+*.mp3

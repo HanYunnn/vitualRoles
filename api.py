@@ -19,16 +19,39 @@ from video_composer import compose_video
 import transcribe
 import broll_generator
 
+import contextvars
+
 app = FastAPI()
 
-# 允許 React 前端 (預設跑在 5173 或其他 port) 進行跨域請求
+# 允許跨域（Vercel 前端 → 此後端）；用 header 帶金鑰、不用 cookie，故 credentials=False
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── 金鑰來源：每次請求的 header 優先（使用者自帶、用完即丟、不儲存），否則退回伺服器 .env ──
+_KEY_NAMES = ["OPENAI_API_KEY", "FAL_KEY", "GEMINI_API_KEY", "HEDRA_API_KEY",
+              "FISH_AUDIO_API_KEY", "PEXELS_API_KEY", "ELEVENLABS_API_KEY"]
+_req_keys = contextvars.ContextVar("req_keys", default={})
+
+def _key(name: str):
+    return _req_keys.get().get(name) or os.getenv(name)
+
+@app.middleware("http")
+async def _keys_from_headers(request, call_next):
+    got = {}
+    for n in _KEY_NAMES:
+        v = request.headers.get("x-" + n.lower().replace("_", "-"))   # 例：X-OPENAI-API-KEY
+        if v:
+            got[n] = v
+    token = _req_keys.set(got)
+    try:
+        return await call_next(request)
+    finally:
+        _req_keys.reset(token)
 
 # 確保靜態目錄存在
 os.makedirs("broll_assets", exist_ok=True)
@@ -144,7 +167,7 @@ class TTSRequest(BaseModel):
 @app.post("/api/tts")
 def generate_tts(req: TTSRequest):
     """呼叫 Fish Audio TTS，將文字稿 + 聲音模型 ID 生成 mp3 配音（高品質預設）。"""
-    key = os.getenv("FISH_AUDIO_API_KEY")
+    key = _key("FISH_AUDIO_API_KEY")
     if not key:
         return {"success": False, "error": "FISH_AUDIO_API_KEY 未設定，請填入 .env"}
     if not req.script.strip():
@@ -232,7 +255,7 @@ _OPT_VIDEO = (
 @app.post("/api/optimize_prompt")
 def optimize_prompt(req: OptimizePromptRequest):
     """用 OpenAI 把粗略 prompt 改寫成更有畫面感、細節豐富的生成 prompt。"""
-    key = os.getenv("OPENAI_API_KEY")
+    key = _key("OPENAI_API_KEY")
     if not key:
         return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
     if not req.prompt.strip():
@@ -260,7 +283,7 @@ def optimize_prompt(req: OptimizePromptRequest):
 @app.post("/api/enhance_script")
 def enhance_script(req: EnhanceRequest):
     """用 OpenAI 把使用者貼上的文字稿加上情緒/語氣標記（不改原文字詞）。"""
-    key = os.getenv("OPENAI_API_KEY")
+    key = _key("OPENAI_API_KEY")
     if not key:
         return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
     if not req.script.strip():
@@ -323,7 +346,7 @@ def generate_image(req: ImageRequest):
     """用 OpenAI gpt-image-1 生成 9:16 場景圖；附參考圖時改走 images.edits 鎖定角色一致性。"""
     if not req.prompt.strip():
         return {"success": False, "error": "圖片 prompt 是空的"}
-    key = os.getenv("OPENAI_API_KEY")   # 僅 gpt-image 路徑需要（nano-banana 走 Gemini/fal）
+    key = _key("OPENAI_API_KEY")   # 僅 gpt-image 路徑需要（nano-banana 走 Gemini/fal）
 
     # 依設定附加構圖／角色保真指令
     prompt = req.prompt
@@ -337,9 +360,9 @@ def generate_image(req: ImageRequest):
     if req.model == "nano-banana":
         raw = req.reference_image_b64.split(",", 1)[-1] if req.reference_image_b64 else None
         out_bytes = None
-        if os.getenv("GEMINI_API_KEY"):
+        if _key("GEMINI_API_KEY"):
             out_bytes, gerr = _gemini_image(prompt, raw)
-            if gerr and not os.getenv("FAL_KEY"):
+            if gerr and not _key("FAL_KEY"):
                 return {"success": False, "error": f"Gemini：{gerr}"}
         if out_bytes is None:   # 沒走 Gemini 或 Gemini 失敗 → fal
             if raw:
@@ -436,7 +459,7 @@ INPAINT_PROMPT = (
 
 def _inpaint_clean_bg(src_path: str, fg_path: str, out_path: str):
     """用前景 alpha 做遮罩，呼叫 OpenAI images.edits 把主體區重繪成乾淨背景。成功回 None，失敗回錯誤字串。"""
-    key = os.getenv("OPENAI_API_KEY")
+    key = _key("OPENAI_API_KEY")
     if not key:
         return "OPENAI_API_KEY 未設定"
     try:
@@ -505,9 +528,9 @@ def split_image(req: SplitRequest):
         from PIL import Image
         raw = base64.b64encode(data).decode()
         green_bytes, err = (None, "no provider")
-        if os.getenv("GEMINI_API_KEY"):
+        if _key("GEMINI_API_KEY"):
             green_bytes, err = _gemini_image(AI_CUTOUT_PROMPT, raw)
-        if (err or not green_bytes) and os.getenv("FAL_KEY"):
+        if (err or not green_bytes) and _key("FAL_KEY"):
             green_bytes, err = _fal_image("fal-ai/nano-banana/edit",
                                           {"prompt": AI_CUTOUT_PROMPT, "image_urls": ["data:image/png;base64," + raw], "num_images": 1})
         if err or not green_bytes:
@@ -584,7 +607,7 @@ def _fal_payload(model: str, prompt: str, image_url: str) -> dict:
 
 def _fal_video(model: str, payload: dict, out_path: str, max_wait: int = 420):
     """提交 fal 任務 → 輪詢到 COMPLETED → 下載影片到 out_path。成功回 None，失敗回錯誤字串。"""
-    key = os.getenv("FAL_KEY")
+    key = _key("FAL_KEY")
     if not key:
         return "FAL_KEY 未設定，請填入 .env"
     headers = {"Authorization": f"Key {key}", "Content-Type": "application/json"}
@@ -630,7 +653,7 @@ def _fal_video(model: str, payload: dict, out_path: str, max_wait: int = 420):
 
 def _fal_image(model: str, payload: dict, max_wait: int = 180):
     """提交 fal 影像任務 → 輪詢到 COMPLETED → 回傳 (image_bytes, None) 或 (None, error)。"""
-    key = os.getenv("FAL_KEY")
+    key = _key("FAL_KEY")
     if not key:
         return None, "FAL_KEY 未設定，請填入 .env"
     headers = {"Authorization": f"Key {key}", "Content-Type": "application/json"}
@@ -670,7 +693,7 @@ def _fal_image(model: str, payload: dict, max_wait: int = 180):
 
 def _gemini_image(prompt: str, ref_raw: Optional[str] = None):
     """直連 Google Gemini 2.5 Flash Image（nano-banana）生圖／編輯。回傳 (image_bytes, None) 或 (None, error)。"""
-    key = os.getenv("GEMINI_API_KEY")
+    key = _key("GEMINI_API_KEY")
     if not key:
         return None, "GEMINI_API_KEY 未設定"
     model = "gemini-2.5-flash-image"
@@ -760,7 +783,7 @@ class HedraRequest(BaseModel):
 @app.post("/api/animate_fg_hedra")
 def animate_fg_hedra(req: HedraRequest):
     """Hedra：角色圖 + Step 1 配音 → 對嘴影片，存成 talking_fg_hedra.mp4。"""
-    key = os.getenv("HEDRA_API_KEY")
+    key = _key("HEDRA_API_KEY")
     if not key or key.startswith("your_"):
         return {"success": False, "error": "HEDRA_API_KEY 未設定，請填入 .env"}
     img = "generated_assets/" + _SRC_MAP.get(req.source, "fg.png")
@@ -931,7 +954,7 @@ def composite(req: CompositeRequest):
 # --- Pexels B-roll 搜尋（回傳直式素材圖網址）---
 @app.get("/api/pexels")
 def pexels_search(q: str):
-    key = os.getenv("PEXELS_API_KEY")
+    key = _key("PEXELS_API_KEY")
     if not key or key.startswith("your_"):
         return {"success": False, "error": "PEXELS_API_KEY 未設定，請填入 .env"}
     try:
@@ -959,7 +982,7 @@ class AutoBrollRequest(BaseModel):
 @app.post("/api/auto_broll")
 def auto_broll(req: AutoBrollRequest):
     """用 GPT-4o 從字幕挑 3–5 個 B-roll 點位、給英文關鍵字，並自動去 Pexels 下載影片。"""
-    if not os.getenv("OPENAI_API_KEY"):
+    if not _key("OPENAI_API_KEY"):
         return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
     if not req.segments:
         return {"success": False, "error": "沒有字幕可分析，請先在剪輯台生成字幕"}
@@ -967,7 +990,8 @@ def auto_broll(req: AutoBrollRequest):
         tmp = "broll_assets/_transcript.json"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"segments": req.segments}, f, ensure_ascii=False)
-        plan = broll_generator.generate_broll_plan(tmp, "broll_assets/_broll_plan.json")
+        plan = broll_generator.generate_broll_plan(tmp, "broll_assets/_broll_plan.json",
+                                                   openai_key=_key("OPENAI_API_KEY"), pexels_key=_key("PEXELS_API_KEY"))
     except Exception as e:
         return {"success": False, "error": f"AI 配 B-roll 失敗：{e}"}
 
@@ -994,7 +1018,8 @@ def reroll_broll(req: RerollRequest):
     if not req.query.strip():
         return {"success": False, "error": "關鍵字是空的"}
     try:
-        path = broll_generator.fetch_and_download_pexels_video(req.query.strip(), "broll_assets", "rr", req.pick)
+        path = broll_generator.fetch_and_download_pexels_video(req.query.strip(), "broll_assets", "rr", req.pick,
+                                                               pexels_key=_key("PEXELS_API_KEY"))
     except Exception as e:
         return {"success": False, "error": f"抓取失敗：{e}"}
     if not path:
@@ -1041,7 +1066,7 @@ def upload_video(file: UploadFile = File(...)):
 @app.post("/api/transcribe")
 def transcribe():
     """用 OpenAI Whisper 把 voiceover.mp3 轉成逐句時間軸字幕（給剪輯台字幕軌）。"""
-    key = os.getenv("OPENAI_API_KEY")
+    key = _key("OPENAI_API_KEY")
     if not key:
         return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
     audio = "generated_assets/voiceover.mp3"

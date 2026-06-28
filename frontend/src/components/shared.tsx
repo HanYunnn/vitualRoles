@@ -3,6 +3,17 @@ import { useRef, useState, Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { DATA } from '../data';
 import type { Role } from '../data';
+import { getStoredKeys, setStoredKeys, KEY_FIELDS } from '../api';
+
+const KEY_LABELS: Record<string, string> = {
+  OPENAI_API_KEY: 'OpenAI（配音轉錄/生圖/B-roll/優化）',
+  FAL_KEY: 'fal.ai（動態背景/對嘴/nano-banana 後備）',
+  GEMINI_API_KEY: 'Google Gemini（nano-banana 生圖/去背）',
+  HEDRA_API_KEY: 'Hedra（對嘴影片）',
+  FISH_AUDIO_API_KEY: 'Fish Audio（TTS 配音）',
+  PEXELS_API_KEY: 'Pexels（B-roll 素材）',
+  ELEVENLABS_API_KEY: 'ElevenLabs（TTS 可選）',
+};
 
 export function Avatar({ r, size = 34 }: { r: Role; size?: number }) {
   return (
@@ -419,34 +430,31 @@ export function AppHeader({
 }
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
-  const keys = ['OpenAI', 'Pexels', 'Hedra', 'ElevenLabs', 'Fish Audio'];
+  const [keys, setKeys] = useState<Record<string, string>>(() => getStoredKeys());
+  const save = () => {
+    setStoredKeys(keys);
+    onClose();
+  };
   return (
     <div className="vlt-ov" onClick={onClose}>
       <div className="vlt-modal" onClick={(e) => e.stopPropagation()}>
         <div className="mh">
-          <h3>API SETTINGS</h3>
+          <h3>API 金鑰設定</h3>
           <button className="vlt-gear" style={{ width: 32, height: 32, border: 'none' }} onClick={onClose}>
             ✕
           </button>
         </div>
         <div className="mb vlt-scroll">
-          <div className="vlt-field">
-            <label>LLM Model</label>
-            <select className="vlt-inp">
-              <option>GPT-4o</option>
-              <option>Claude 3.5 Sonnet</option>
-              <option>GPT-4o mini</option>
-            </select>
-          </div>
-          <hr className="vlt-divline" style={{ margin: '4px 0 16px' }} />
-          {keys.map((k) => (
-            <div className="vlt-field" key={k}>
-              <label>{k} API Key</label>
+          {KEY_FIELDS.map((f) => (
+            <div className="vlt-field" key={f}>
+              <label>{KEY_LABELS[f] ?? f}</label>
               <input
                 className="vlt-inp"
                 type="password"
-                placeholder={'sk-•••• ' + (k === 'OpenAI' ? '（已設定）' : '留空則用 .env 預設')}
-                defaultValue={k === 'OpenAI' || k === 'ElevenLabs' ? '••••••••••••••••' : ''}
+                autoComplete="off"
+                placeholder="貼上你的金鑰（留空則用伺服器預設）"
+                value={keys[f] ?? ''}
+                onChange={(e) => setKeys({ ...keys, [f]: e.target.value })}
               />
             </div>
           ))}
@@ -460,7 +468,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               margin: '4px 0 0',
             }}
           >
-            金鑰只儲存於本機瀏覽器，不會上傳。留空的欄位將回退到後端 .env 預設值。
+            🔒 金鑰只存在你的瀏覽器（localStorage），每次請求才以 header 帶給後端、伺服器不會儲存。
           </p>
         </div>
         <div
@@ -475,7 +483,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           <button className="vlt-btn sec sm" onClick={onClose}>
             取消
           </button>
-          <button className="vlt-btn pri sm" onClick={onClose}>
+          <button className="vlt-btn pri sm" onClick={save}>
             儲存設定
           </button>
         </div>
