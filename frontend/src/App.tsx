@@ -7,6 +7,7 @@ import { Phase2 } from './phases/Phase2';
 import { Phase3, Phase4 } from './phases/Phase34';
 import { DATA } from './data';
 import * as api from './api';
+import { getStoredKeys } from './api';
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -16,6 +17,7 @@ export default function App() {
     return p >= 1 && p <= 4 ? p : 1;
   });
   const [settings, setSettings] = useState(false);
+  const [hasKeys, setHasKeys] = useState(() => Object.keys(getStoredKeys()).length > 0);
   const [renderedUrl, setRenderedUrl] = useState('');
   const [script, setScript] = useState(DATA.script);
   const rendering = useRef(false);
@@ -59,11 +61,18 @@ export default function App() {
   return (
     <div className="vlt vlt-app">
       <AppHeader phase={phase} setPhase={setPhase} action={action} onSettings={() => setSettings(true)} />
+      {!hasKeys && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: 'rgba(255,180,60,.12)', borderBottom: '1px solid var(--bd)', fontSize: 12.5, color: '#e8c06a' }}>
+          <span>⚠️ 尚未設定 API 金鑰，部分功能無法使用（本機若已在 .env 設定可忽略）</span>
+          <span style={{ flex: 1 }} />
+          <button className="vlt-btn pri sm" style={{ padding: '3px 10px' }} onClick={() => setSettings(true)}>設定金鑰</button>
+        </div>
+      )}
       {phase === 1 && <Phase1 onProceed={handleProceed} script={script} setScript={setScript} />}
       {phase === 2 && <Phase2 script={script} />}
       {phase === 3 && <Phase3 />}
       {phase === 4 && <Phase4 onBack={() => setPhase(2)} videoUrl={renderedUrl} />}
-      {settings && <SettingsModal onClose={() => setSettings(false)} />}
+      {settings && <SettingsModal onClose={() => { setSettings(false); setHasKeys(Object.keys(getStoredKeys()).length > 0); }} />}
     </div>
   );
 }

@@ -184,7 +184,7 @@ def generate_tts(req: TTSRequest):
     """呼叫 Fish Audio TTS，將文字稿 + 聲音模型 ID 生成 mp3 配音（高品質預設）。"""
     key = _key("FISH_AUDIO_API_KEY")
     if not key:
-        return {"success": False, "error": "FISH_AUDIO_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "FISH_AUDIO_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     if not req.script.strip():
         return {"success": False, "error": "文字稿是空的"}
 
@@ -272,7 +272,7 @@ def optimize_prompt(req: OptimizePromptRequest):
     """用 OpenAI 把粗略 prompt 改寫成更有畫面感、細節豐富的生成 prompt。"""
     key = _key("OPENAI_API_KEY")
     if not key:
-        return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "OPENAI_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     if not req.prompt.strip():
         return {"success": False, "error": "prompt 是空的"}
     system = _OPT_VIDEO if req.kind == "video" else _OPT_IMAGE
@@ -300,7 +300,7 @@ def enhance_script(req: EnhanceRequest):
     """用 OpenAI 把使用者貼上的文字稿加上情緒/語氣標記（不改原文字詞）。"""
     key = _key("OPENAI_API_KEY")
     if not key:
-        return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "OPENAI_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     if not req.script.strip():
         return {"success": False, "error": "文字稿是空的"}
 
@@ -392,7 +392,7 @@ def generate_image(req: ImageRequest):
         return {"success": True, "image_url": _gurl("base_image.png")}
 
     if not key:
-        return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "OPENAI_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     headers = {"Authorization": f"Bearer {key}"}
     try:
         if req.reference_image_b64:
@@ -624,7 +624,7 @@ def _fal_video(model: str, payload: dict, out_path: str, max_wait: int = 420):
     """提交 fal 任務 → 輪詢到 COMPLETED → 下載影片到 out_path。成功回 None，失敗回錯誤字串。"""
     key = _key("FAL_KEY")
     if not key:
-        return "FAL_KEY 未設定，請填入 .env"
+        return "FAL_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"
     headers = {"Authorization": f"Key {key}", "Content-Type": "application/json"}
     try:
         submit = requests.post(f"https://queue.fal.run/{model}", headers=headers, json=payload, timeout=60)
@@ -670,7 +670,7 @@ def _fal_image(model: str, payload: dict, max_wait: int = 180):
     """提交 fal 影像任務 → 輪詢到 COMPLETED → 回傳 (image_bytes, None) 或 (None, error)。"""
     key = _key("FAL_KEY")
     if not key:
-        return None, "FAL_KEY 未設定，請填入 .env"
+        return None, "FAL_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"
     headers = {"Authorization": f"Key {key}", "Content-Type": "application/json"}
     try:
         submit = requests.post(f"https://queue.fal.run/{model}", headers=headers, json=payload, timeout=60)
@@ -800,7 +800,7 @@ def animate_fg_hedra(req: HedraRequest):
     """Hedra：角色圖 + Step 1 配音 → 對嘴影片，存成 talking_fg_hedra.mp4。"""
     key = _key("HEDRA_API_KEY")
     if not key or key.startswith("your_"):
-        return {"success": False, "error": "HEDRA_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "HEDRA_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     img = _gpath(_SRC_MAP.get(req.source, "fg.png"))
     audio = _gpath("voiceover.mp3")
     if not os.path.exists(img):
@@ -971,7 +971,7 @@ def composite(req: CompositeRequest):
 def pexels_search(q: str):
     key = _key("PEXELS_API_KEY")
     if not key or key.startswith("your_"):
-        return {"success": False, "error": "PEXELS_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "PEXELS_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     try:
         r = requests.get(
             "https://api.pexels.com/v1/search",
@@ -998,7 +998,7 @@ class AutoBrollRequest(BaseModel):
 def auto_broll(req: AutoBrollRequest):
     """用 GPT-4o 從字幕挑 3–5 個 B-roll 點位、給英文關鍵字，並自動去 Pexels 下載影片。"""
     if not _key("OPENAI_API_KEY"):
-        return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "OPENAI_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     if not req.segments:
         return {"success": False, "error": "沒有字幕可分析，請先在剪輯台生成字幕"}
     try:
@@ -1084,7 +1084,7 @@ def transcribe():
     """用 OpenAI Whisper 把 voiceover.mp3 轉成逐句時間軸字幕（給剪輯台字幕軌）。"""
     key = _key("OPENAI_API_KEY")
     if not key:
-        return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
+        return {"success": False, "error": "OPENAI_API_KEY 未設定（請點右上 ⚙️ 設定 API 金鑰）"}
     audio = _gpath("voiceover.mp3")
     if not os.path.exists(audio):
         return {"success": False, "error": "找不到配音，請先在 Step 1 生成 voiceover.mp3"}

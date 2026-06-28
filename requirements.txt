@@ -3,8 +3,8 @@ uvicorn==0.48.0
 requests==2.34.2
 python-dotenv==1.2.2
 openai==2.38.0
-pillow==12.2.0
+pillow==11.3.0
 numpy==2.4.6
 moviepy==2.2.1
-rembg==2.0.75
-onnxruntime==1.26.0
+rembg==2.0.69
+onnxruntime==1.27.0
