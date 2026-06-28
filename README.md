@@ -1,4 +1,16 @@
+---
+title: Vitual Roles Backend
+emoji: 🎬
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # Virtual Roles — AI Podcast 影片產生器
+
+> 上方 frontmatter 供 Hugging Face Spaces(Docker)使用;GitHub 會忽略它。
 
 文字稿 → AI 配音 → 生圖/去背 → 對嘴影片 → 動態背景 → 字幕/B-roll 剪輯 → 9:16 成片。
 後端 FastAPI，前端 React + Vite。

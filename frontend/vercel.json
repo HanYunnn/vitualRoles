@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://vitualroles.onrender.com/api/:path*" },
-    { "source": "/assets/:path*", "destination": "https://vitualroles.onrender.com/assets/:path*" }
+    { "source": "/api/:path*", "destination": "https://YOUR-HF-ACCOUNT-vitualroles.hf.space/api/:path*" },
+    { "source": "/assets/:path*", "destination": "https://YOUR-HF-ACCOUNT-vitualroles.hf.space/assets/:path*" }
   ]
 }

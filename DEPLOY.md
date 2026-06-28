@@ -1,16 +1,21 @@
-# 部署:Vercel(前端) + Render(後端) + 使用者自帶金鑰
+# 部署:Vercel(前端) + Hugging Face Spaces(後端) + 使用者自帶金鑰
 
-架構:前端放 Vercel、Python 後端放 Render(有 ffmpeg)。使用者在網頁的「⚙️ API 金鑰設定」輸入自己的金鑰 → 存在他們的瀏覽器,每次請求以 header 帶給後端、**後端用完即丟、不儲存**。
+架構:前端放 Vercel、Python 後端放 **Hugging Face Spaces**(免費、16GB RAM、有 ffmpeg)。使用者在網頁的「⚙️ API 金鑰設定」輸入自己的金鑰 → 存在他們的瀏覽器,每次請求以 header 帶給後端、**後端用完即丟、不儲存**。
 
-## 1. 部署後端到 Render
-1. https://render.com → New → **Web Service** → 連你的 GitHub repo
-2. Render 會偵測到 **Dockerfile**(已內含 ffmpeg);Environment 選 **Docker**
-3. Instance：免費方案記憶體可能不夠(rembg/onnxruntime 較吃)→ 建議至少 **512MB–1GB**
-4. （可選）你也可以在 Render 的 Environment 填一組 `.env` 金鑰當「預設」;但若要使用者各自帶金鑰,可全部留空
-5. 部署完成 → 複製後端網址,例如 `https://vitualroles.onrender.com`
+## 1. 部署後端到 Hugging Face Spaces(免費)
+1. https://huggingface.co/new-space → 取名(如 `vitualroles`)→ **SDK 選 Docker**(Blank)→ 建立
+2. 把這個 repo 推到 Space 的 git(Space 本身就是一個 git repo):
+   ```bash
+   git remote add hf https://huggingface.co/spaces/<你的HF帳號>/vitualroles
+   git push hf main
+   ```
+   (HF 會要你的帳號 + access token 當密碼:https://huggingface.co/settings/tokens 產一個 write token)
+3. HF 會讀 **Dockerfile** + README 的 `app_port: 8000` 自動 build(首次 5–10 分鐘)
+4. 完成 → 後端網址是 **`https://<你的HF帳號>-vitualroles.hf.space`**
+5. （可選）Space → Settings → Secrets 可填一組金鑰當預設;要使用者各自帶金鑰則留空
 
 ## 2. 設定前端轉發
-編輯 [frontend/vercel.json](frontend/vercel.json),把兩個 `YOUR-BACKEND.onrender.com` 換成你的後端網址,commit + push。
+編輯 [frontend/vercel.json](frontend/vercel.json),把兩個網址換成你的 **HF Space 網址**(`https://<帳號>-vitualroles.hf.space`),commit + push。
 
 ## 3. 部署前端到 Vercel
 1. https://vercel.com → New Project → 連同一個 repo
