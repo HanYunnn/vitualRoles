@@ -1,7 +1,7 @@
 {
   "$comment": "把 YOUR-BACKEND 換成你部署的後端網址（如 vitualroles.onrender.com）。前端用相對 /api、/assets，由 Vercel 轉發到後端，瀏覽器視為同源（免 CORS）。金鑰 header 會一併轉發。",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://YOUR-BACKEND.onrender.com/api/:path*" },
-    { "source": "/assets/:path*", "destination": "https://YOUR-BACKEND.onrender.com/assets/:path*" }
+    { "source": "/api/:path*", "destination": "https://vitualroles.onrender.com/api/:path*" },
+    { "source": "/assets/:path*", "destination": "https://vitualroles.onrender.com/assets/:path*" }
   ]
 }
