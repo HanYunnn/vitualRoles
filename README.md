@@ -1,5 +1,5 @@
 ---
-title: Vitual Roles Backend
+title: Avatalk Backend
 emoji: 🎬
 colorFrom: indigo
 colorTo: purple
@@ -8,7 +8,7 @@ app_port: 8000
 pinned: false
 ---
 
-# Virtual Roles — AI Podcast 影片產生器
+# Avatalk — AI 虛擬角色 Podcast 影片產生器
 
 > 上方 frontmatter 供 Hugging Face Spaces(Docker)使用;GitHub 會忽略它。
 

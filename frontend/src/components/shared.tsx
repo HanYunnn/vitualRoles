@@ -396,10 +396,10 @@ export function AppHeader({
   ];
   return (
     <header className="vlt-hd">
-      <div className="vlt-mk">V</div>
+      <div className="vlt-mk">A</div>
       <div className="vlt-wm">
-        <b>VOLTLITES</b>
-        <span>EDITOR</span>
+        <b>AVATALK</b>
+        <span>STUDIO</span>
       </div>
       <nav className="vlt-steps">
         {steps.map(([n, l, sub], i) => (
