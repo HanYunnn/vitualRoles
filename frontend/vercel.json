@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://YOUR-HF-ACCOUNT-vitualroles.hf.space/api/:path*" },
-    { "source": "/assets/:path*", "destination": "https://YOUR-HF-ACCOUNT-vitualroles.hf.space/assets/:path*" }
+    { "source": "/api/:path*", "destination": "https://hayu31-virtualroles.hf.space/api/:path*" },
+    { "source": "/assets/:path*", "destination": "https://hayu31-virtualroles.hf.space/assets/:path*" }
   ]
 }
