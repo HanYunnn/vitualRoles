@@ -9,6 +9,8 @@ export const FALLBACK_VIDEO = 'http://commondatastorage.googleapis.com/gtv-video
 // 本機開發留空 → 走 Vite proxy。
 const API_BASE = ((import.meta as { env?: Record<string, string> }).env?.VITE_API_BASE) || '';
 export const apiUrl = (path: string) => API_BASE + path;
+/** 本 session 的 generated 資產 URL（給直接引用的檔，如監看畫面的成片）。 */
+export const genAssetUrl = (name: string) => apiUrl(`/assets/work/${getSessionId()}/generated/${name}`);
 
 // 使用者自帶金鑰：存在瀏覽器 localStorage，每次請求以 header 帶給後端（不存伺服器）
 const KEY_MAP: Record<string, string> = {
@@ -27,9 +29,19 @@ export function getStoredKeys(): Record<string, string> {
 export function setStoredKeys(k: Record<string, string>) {
   localStorage.setItem('vlt-keys', JSON.stringify(k));
 }
+// 每個瀏覽器一個 session id → 後端用它分隔工作目錄（多人同時不互相覆蓋）
+function getSessionId(): string {
+  let s = localStorage.getItem('vlt-session');
+  if (!s) {
+    s = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`).replace(/[^a-zA-Z0-9_-]/g, '');
+    localStorage.setItem('vlt-session', s);
+  }
+  return s;
+}
+
 export function keyHeaders(): Record<string, string> {
   const k = getStoredKeys();
-  const h: Record<string, string> = {};
+  const h: Record<string, string> = { 'X-SESSION-ID': getSessionId() };
   for (const [name, hdr] of Object.entries(KEY_MAP)) if (k[name]) h[hdr] = k[name];
   return h;
 }

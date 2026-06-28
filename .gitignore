@@ -33,3 +33,6 @@ saved_scenes/
 
 # Claude Code 本機設定
 .claude/settings.local.json
+
+# 每位使用者的工作目錄(執行時生成)
+sessions/

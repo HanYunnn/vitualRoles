@@ -6,7 +6,7 @@ import { Slider, ColorField } from '../components/shared';
 import { EditorProvider, useEditor, fmtTC, VIDEO_H } from './editorStore';
 import type { SubStyle } from '../data';
 import { FONTS, fontCss } from '../data';
-import { transcribe, searchPexels, autoBroll, rerollBroll, listFonts } from '../api';
+import { transcribe, searchPexels, autoBroll, rerollBroll, listFonts, genAssetUrl } from '../api';
 
 let _sysFontsCache: string[] | null = null;   // 整個 session 只抓一次
 
@@ -438,7 +438,7 @@ function EditorMonitor() {
         <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(125deg,#16161a 0 13px,#101013 13px 26px)' }} />
         <video
           ref={vidRef}
-          src="/assets/generated/final_composite.mp4"
+          src={genAssetUrl('final_composite.mp4')}
           playsInline
           preload="auto"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}

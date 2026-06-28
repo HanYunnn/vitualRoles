@@ -23,8 +23,13 @@
 2. 右上 **⚙️ → API 金鑰設定** → 貼上自己的金鑰(OpenAI / fal / Gemini / Hedra / Fish / Pexels)→ 儲存
 3. 開始用;金鑰只在他們瀏覽器,經 header 帶給後端、不被儲存
 
-## ⚠️ 已知限制(先試試版)
-- **單一工作檔**:後端用固定檔名(base_image.png、fg.png…),**多人同時用會互相覆蓋**。自己/少數人測試 OK;要正式多人需加「每人一個工作目錄/session」。
+## 多人同時使用 ✅
+- 每個瀏覽器會產生一個 **session id**(存 localStorage),隨每次請求帶上 `X-Session-Id`。
+- 後端把檔案分到 **`sessions/<id>/generated|broll/`**,**多人同時用互不覆蓋**。
+- 資產 URL 也是 `/assets/work/<id>/...`,各自獨立。
+- 注意:`sessions/` 會隨使用累積,建議定期清理舊目錄(或之後加自動過期)。
+
+## ⚠️ 其他注意
 - **Render 冷啟動**:免費方案閒置會休眠,第一次請求較慢;rembg 首次會下載模型。
 - **大影片經 Vercel 轉發**:一般可串流;若遇大小限制,改用前端環境變數 `VITE_API_BASE` 直連後端(需後端 CORS,已開)。
 - 對嘴/動態背景要等數分鐘,Render 請求逾時設長一點。

@@ -40,30 +40,47 @@ _req_keys = contextvars.ContextVar("req_keys", default={})
 def _key(name: str):
     return _req_keys.get().get(name) or os.getenv(name)
 
+# ── 每位使用者一個獨立工作目錄（多人同時不互相覆蓋）；session id 由前端以 header 帶入 ──
+import re as _re
+_session = contextvars.ContextVar("session", default="default")
+WORK_ROOT = "sessions"
+
+def _safe_sid(s):
+    s = _re.sub(r"[^A-Za-z0-9_-]", "", (s or "").strip())[:64]
+    return s or "default"
+
+def _sid():
+    return _session.get()
+
+def _gendir():
+    d = os.path.join(WORK_ROOT, _sid(), "generated"); os.makedirs(d, exist_ok=True); return d
+
+def _brolldir():
+    d = os.path.join(WORK_ROOT, _sid(), "broll"); os.makedirs(d, exist_ok=True); return d
+
+def _gpath(name): return os.path.join(_gendir(), name)
+def _bpath(name): return os.path.join(_brolldir(), name)
+def _gurl(name): return f"/assets/work/{_sid()}/generated/{name}"
+def _burl(name): return f"/assets/work/{_sid()}/broll/{name}"
+
 @app.middleware("http")
-async def _keys_from_headers(request, call_next):
+async def _ctx_from_headers(request, call_next):
     got = {}
     for n in _KEY_NAMES:
         v = request.headers.get("x-" + n.lower().replace("_", "-"))   # 例：X-OPENAI-API-KEY
         if v:
             got[n] = v
-    token = _req_keys.set(got)
+    tk = _req_keys.set(got)
+    ts = _session.set(_safe_sid(request.headers.get("x-session-id")))
     try:
         return await call_next(request)
     finally:
-        _req_keys.reset(token)
+        _req_keys.reset(tk)
+        _session.reset(ts)
 
-# 確保靜態目錄存在
-os.makedirs("broll_assets", exist_ok=True)
-os.makedirs("generated_assets", exist_ok=True)
-
-# 為了讓前端能預覽 test_video.mp4，我們將它複製到 generated_assets/
-if os.path.exists("test_video.mp4") and not os.path.exists("generated_assets/test_video.mp4"):
-    shutil.copy("test_video.mp4", "generated_assets/test_video.mp4")
-
-# 掛載靜態檔案目錄供前端播放影片
-app.mount("/assets/generated", StaticFiles(directory="generated_assets"), name="generated")
-app.mount("/assets/broll", StaticFiles(directory="broll_assets"), name="broll")
+# 掛載：sessions/<sid>/generated|broll → /assets/work/<sid>/generated|broll
+os.makedirs(WORK_ROOT, exist_ok=True)
+app.mount("/assets/work", StaticFiles(directory=WORK_ROOT), name="work")
 
 # --- 資料結構定義 ---
 class GenerateRequest(BaseModel):
@@ -100,7 +117,7 @@ MOCK_SUBTITLES = [
 ]
 
 MOCK_BROLL_PLAN = [
-    {"start": 5.0, "end": 12.5, "query": "office teamwork discussion", "video_path": "broll_assets/broll_0_office_teamwork_conflict.mp4"}
+    {"start": 5.0, "end": 12.5, "query": "office teamwork discussion", "video_path": _bpath("broll_0_office_teamwork_conflict.mp4")}
 ]
 
 # --- 路由與端點 ---
@@ -110,13 +127,13 @@ def mock_generate(req: GenerateRequest):
     time.sleep(0.5)
     return {
         "success": True,
-        "fg_video_path": "generated_assets/test_video.mp4",
+        "fg_video_path": _gpath("test_video.mp4"),
         "bg_video_path": "",
-        "bg_image_path": "generated_assets/background_clean.png",
+        "bg_image_path": _gpath("background_clean.png"),
         "bg_mode": "ken_burns",
         # 前端能存取的 URL
-        "unified_image_url": "/assets/generated/unified_ideal.png",
-        "fg_video_url": "/assets/generated/test_video.mp4"
+        "unified_image_url": _gurl("unified_ideal.png"),
+        "fg_video_url": _gurl("test_video.mp4")
     }
 
 @app.post("/api/mock_analyze")
@@ -134,12 +151,10 @@ def mock_render(req: RenderRequest):
     # 在純 Mock 模式下，直接回傳預設的主影片作為「渲染完成」的代表
     return {
         "success": True,
-        "video_url": "/assets/generated/test_video.mp4"
+        "video_url": _gurl("test_video.mp4")
     }
 
-# --- 專案存檔 / 讀檔（本地檔案持久化） ---
-PROJECT_PATH = "generated_assets/project.json"
-
+# --- 專案存檔 / 讀檔（每個 session 各自一份） ---
 class ProjectState(BaseModel):
     subtitles: List[Dict[str, Any]] = []
     brolls: List[Dict[str, Any]] = []
@@ -149,7 +164,7 @@ class ProjectState(BaseModel):
 @app.post("/api/project/save")
 def save_project(state: ProjectState):
     """將前端編輯台狀態寫成本機 JSON 檔。"""
-    with open(PROJECT_PATH, "w", encoding="utf-8") as f:
+    with open(_gpath("project.json"), "w", encoding="utf-8") as f:
         json.dump(state.model_dump(), f, ensure_ascii=False, indent=2)
     return {"success": True}
 
@@ -211,10 +226,10 @@ def generate_tts(req: TTSRequest):
     if resp.status_code != 200:
         return {"success": False, "error": f"Fish Audio 回應 {resp.status_code}：{resp.text[:200]}"}
 
-    out_path = "generated_assets/voiceover.mp3"
+    out_path = _gpath("voiceover.mp3")
     with open(out_path, "wb") as f:
         f.write(resp.content)
-    return {"success": True, "audio_url": "/assets/generated/voiceover.mp3"}
+    return {"success": True, "audio_url": _gurl("voiceover.mp3")}
 
 # --- OpenAI 語氣增強：自動為文字稿插入 Fish Audio 情緒/語氣標記 ---
 class EnhanceRequest(BaseModel):
@@ -372,9 +387,9 @@ def generate_image(req: ImageRequest):
                 out_bytes, ferr = _fal_image("fal-ai/nano-banana", {"prompt": prompt, "num_images": 1})
             if ferr:
                 return {"success": False, "error": ferr}
-        with open("generated_assets/base_image.png", "wb") as f:
+        with open(_gpath("base_image.png"), "wb") as f:
             f.write(out_bytes)
-        return {"success": True, "image_url": "/assets/generated/base_image.png"}
+        return {"success": True, "image_url": _gurl("base_image.png")}
 
     if not key:
         return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
@@ -411,10 +426,10 @@ def generate_image(req: ImageRequest):
     except (KeyError, IndexError, ValueError) as e:
         return {"success": False, "error": f"OpenAI 回傳格式異常：{e}"}
 
-    out_path = "generated_assets/base_image.png"
+    out_path = _gpath("base_image.png")
     with open(out_path, "wb") as f:
         f.write(out_bytes)
-    return {"success": True, "image_url": "/assets/generated/base_image.png"}
+    return {"success": True, "image_url": _gurl("base_image.png")}
 
 _REMBG_SESSIONS = {}
 def _rembg_session(new_session, name):
@@ -513,9 +528,9 @@ def _inpaint_clean_bg(src_path: str, fg_path: str, out_path: str):
 @app.post("/api/split_image")
 def split_image(req: SplitRequest):
     """把場景圖去背：前景=透明背景主體 PNG；背景=移除主體的乾淨場景（clean_bg）或原圖。"""
-    src = "generated_assets/base_image.png"
-    fg_path = "generated_assets/fg.png"
-    bg_path = "generated_assets/bg.png"
+    src = _gpath("base_image.png")
+    fg_path = _gpath("fg.png")
+    bg_path = _gpath("bg.png")
     if not os.path.exists(src):
         return {"success": False, "error": "找不到場景圖，請先在 Step 2 生成或上傳"}
 
@@ -570,7 +585,7 @@ def split_image(req: SplitRequest):
         _fim = Image.open(fg_path).convert("RGBA")
         _green = Image.new("RGBA", _fim.size, (0, 177, 64, 255))
         _green.paste(_fim, (0, 0), _fim)
-        _green.convert("RGB").save("generated_assets/fg_green.png")
+        _green.convert("RGB").save(_gpath("fg_green.png"))
     except Exception:
         pass
 
@@ -583,8 +598,8 @@ def split_image(req: SplitRequest):
 
     return {
         "success": True,
-        "fg_url": "/assets/generated/fg.png",
-        "bg_url": "/assets/generated/bg.png",
+        "fg_url": _gurl("fg.png"),
+        "bg_url": _gurl("bg.png"),
         "warning": warning,
     }
 
@@ -724,14 +739,14 @@ def _data_uri(path: str, mime: str) -> str:
 @app.post("/api/animate_bg")
 def animate_bg(req: AnimateRequest):
     """把乾淨背景 bg.png 丟 fal.ai image-to-video，輪詢完成後存成 bg_motion.mp4。"""
-    src = "generated_assets/bg.png"
+    src = _gpath("bg.png")
     if not os.path.exists(src):
         return {"success": False, "error": "找不到背景圖，請先在 Step 3 去背產生 bg.png"}
     payload = _fal_payload(req.model, req.prompt, _data_uri(src, "image/png"))
-    err = _fal_video(req.model, payload, "generated_assets/bg_motion.mp4", max_wait=300)
+    err = _fal_video(req.model, payload, _gpath("bg_motion.mp4"), max_wait=300)
     if err:
         return {"success": False, "error": err}
-    return {"success": True, "video_url": "/assets/generated/bg_motion.mp4"}
+    return {"success": True, "video_url": _gurl("bg_motion.mp4")}
 
 # --- 對嘴前景：fal.ai audio-driven avatar（圖片＋配音 → 會講話的人物）---
 # 來源圖：fg=透明去背 / fg_green=綠幕版（建議，色鍵不吃深色腳掌）/ scene=完整場景
@@ -754,8 +769,8 @@ class AvatarRequest(BaseModel):
 @app.post("/api/animate_fg")
 def animate_fg(req: AvatarRequest):
     """用前景圖 + Step 1 配音，呼叫 fal avatar 模型生成對嘴影片，存成 talking_fg.mp4。"""
-    img = "generated_assets/" + _SRC_MAP.get(req.source, "fg.png")
-    audio = "generated_assets/voiceover.mp3"
+    img = _gpath(_SRC_MAP.get(req.source, "fg.png"))
+    audio = _gpath("voiceover.mp3")
     if not os.path.exists(img):
         return {"success": False, "error": "找不到角色圖，請先在 Step 3 去背（fg）或 Step 2 生圖（scene）"}
     if not os.path.exists(audio):
@@ -767,10 +782,10 @@ def animate_fg(req: AvatarRequest):
     }
     if req.prompt.strip():
         payload["prompt"] = req.prompt
-    err = _fal_video(req.model, payload, "generated_assets/talking_fg.mp4", max_wait=900)  # 對嘴慢，給 15 分鐘
+    err = _fal_video(req.model, payload, _gpath("talking_fg.mp4"), max_wait=900)  # 對嘴慢，給 15 分鐘
     if err:
         return {"success": False, "error": err}
-    return {"success": True, "video_url": "/assets/generated/talking_fg.mp4"}
+    return {"success": True, "video_url": _gurl("talking_fg.mp4")}
 
 # --- 對嘴前景（Hedra Character-3）---
 class HedraRequest(BaseModel):
@@ -786,8 +801,8 @@ def animate_fg_hedra(req: HedraRequest):
     key = _key("HEDRA_API_KEY")
     if not key or key.startswith("your_"):
         return {"success": False, "error": "HEDRA_API_KEY 未設定，請填入 .env"}
-    img = "generated_assets/" + _SRC_MAP.get(req.source, "fg.png")
-    audio = "generated_assets/voiceover.mp3"
+    img = _gpath(_SRC_MAP.get(req.source, "fg.png"))
+    audio = _gpath("voiceover.mp3")
     if not os.path.exists(img):
         return {"success": False, "error": "找不到角色圖，請先在 Step 3 去背（fg）或 Step 2 生圖（scene）"}
     if not os.path.exists(audio):
@@ -871,9 +886,9 @@ def animate_fg_hedra(req: HedraRequest):
     except requests.RequestException as e:
         return {"success": False, "error": f"連線 Hedra 失敗：{e}"}
 
-    with open("generated_assets/talking_fg_hedra.mp4", "wb") as f:
+    with open(_gpath("talking_fg_hedra.mp4"), "wb") as f:
         f.write(clip.content)
-    return {"success": True, "video_url": "/assets/generated/talking_fg_hedra.mp4"}
+    return {"success": True, "video_url": _gurl("talking_fg_hedra.mp4")}
 
 # --- 合成：對嘴前景（逐幀 rembg 去背）疊到背景 → 9:16 成片（本地，免費）---
 class CompositeRequest(BaseModel):
@@ -884,10 +899,10 @@ class CompositeRequest(BaseModel):
 @app.post("/api/composite")
 def composite(req: CompositeRequest):
     """把對嘴前景去背疊到背景，或（key=none）直接把場景內對嘴補成 1080×1920。"""
-    fg_path = f"generated_assets/{os.path.basename(req.fg_video)}"
+    fg_path = _gpath(os.path.basename(req.fg_video))
     if not os.path.exists(fg_path):
         return {"success": False, "error": f"找不到前景影片 {req.fg_video}"}
-    bg_png, bg_mp4 = "generated_assets/bg.png", "generated_assets/bg_motion.mp4"
+    bg_png, bg_mp4 = _gpath("bg.png"), _gpath("bg_motion.mp4")
     motion = req.bg_mode == "motion"
     none_key = req.key == "none"
     use_chroma = req.key == "chroma"
@@ -941,7 +956,7 @@ def composite(req: CompositeRequest):
             base.paste(fg_im, (0, 0), fg_im)                            # 用 alpha 疊上去
             return np.array(base)
 
-        out_path = "generated_assets/final_composite.mp4"
+        out_path = _gpath("final_composite.mp4")
         VideoClip(make_frame, duration=fg.duration).with_audio(fg.audio).write_videofile(
             out_path, fps=fps, codec="libx264", audio_codec="aac", logger=None, threads=4)
         fg.close()
@@ -949,7 +964,7 @@ def composite(req: CompositeRequest):
             bgc.close()
     except Exception as e:
         return {"success": False, "error": f"合成失敗：{e}"}
-    return {"success": True, "video_url": "/assets/generated/final_composite.mp4"}
+    return {"success": True, "video_url": _gurl("final_composite.mp4")}
 
 # --- Pexels B-roll 搜尋（回傳直式素材圖網址）---
 @app.get("/api/pexels")
@@ -987,11 +1002,12 @@ def auto_broll(req: AutoBrollRequest):
     if not req.segments:
         return {"success": False, "error": "沒有字幕可分析，請先在剪輯台生成字幕"}
     try:
-        tmp = "broll_assets/_transcript.json"
+        tmp = _bpath("_transcript.json")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"segments": req.segments}, f, ensure_ascii=False)
-        plan = broll_generator.generate_broll_plan(tmp, "broll_assets/_broll_plan.json",
-                                                   openai_key=_key("OPENAI_API_KEY"), pexels_key=_key("PEXELS_API_KEY"))
+        plan = broll_generator.generate_broll_plan(tmp, _bpath("_broll_plan.json"),
+                                                   openai_key=_key("OPENAI_API_KEY"), pexels_key=_key("PEXELS_API_KEY"),
+                                                   out_dir=_brolldir())
     except Exception as e:
         return {"success": False, "error": f"AI 配 B-roll 失敗：{e}"}
 
@@ -1002,7 +1018,7 @@ def auto_broll(req: AutoBrollRequest):
             continue   # Pexels 沒找到/下載失敗的點位跳過
         items.append({
             "start": p["start"], "end": p["end"], "q": p["query"],
-            "url": "/assets/broll/" + os.path.basename(vp), "reason": p.get("reason", ""),
+            "url": _burl(os.path.basename(vp)), "reason": p.get("reason", ""),
         })
     if not items:
         return {"success": False, "error": "Pexels 找不到合適素材（或下載失敗）"}
@@ -1018,13 +1034,13 @@ def reroll_broll(req: RerollRequest):
     if not req.query.strip():
         return {"success": False, "error": "關鍵字是空的"}
     try:
-        path = broll_generator.fetch_and_download_pexels_video(req.query.strip(), "broll_assets", "rr", req.pick,
+        path = broll_generator.fetch_and_download_pexels_video(req.query.strip(), _brolldir(), "rr", req.pick,
                                                                pexels_key=_key("PEXELS_API_KEY"))
     except Exception as e:
         return {"success": False, "error": f"抓取失敗：{e}"}
     if not path:
         return {"success": False, "error": f"Pexels 找不到「{req.query}」的直式素材"}
-    return {"success": True, "url": "/assets/broll/" + os.path.basename(path)}
+    return {"success": True, "url": _burl(os.path.basename(path))}
 
 # --- 上傳場景圖：存成 base_image.png（供 Step 3 去背、Step 4 對嘴使用）---
 @app.post("/api/upload_image")
@@ -1033,16 +1049,16 @@ def upload_image(file: UploadFile = File(...)):
     try:
         from PIL import Image
         img = Image.open(file.file).convert("RGB")
-        img.save("generated_assets/base_image.png", format="PNG")
+        img.save(_gpath("base_image.png"), format="PNG")
     except Exception as e:
         return {"success": False, "error": f"圖片處理失敗：{e}"}
-    return {"success": True, "image_url": "/assets/generated/base_image.png"}
+    return {"success": True, "image_url": _gurl("base_image.png")}
 
 # --- 上傳已有影片：當作剪輯台底層影片，並抽音軌給 Whisper 上字幕 ---
 @app.post("/api/upload_video")
 def upload_video(file: UploadFile = File(...)):
     """把上傳的影片存成剪輯台底層（final_composite.mp4），並抽出音軌成 voiceover.mp3。"""
-    dst = "generated_assets/final_composite.mp4"
+    dst = _gpath("final_composite.mp4")
     try:
         with open(dst, "wb") as f:
             shutil.copyfileobj(file.file, f)
@@ -1054,13 +1070,13 @@ def upload_video(file: UploadFile = File(...)):
         from moviepy import VideoFileClip
         clip = VideoFileClip(dst)
         if clip.audio is not None:
-            clip.audio.write_audiofile("generated_assets/voiceover.mp3", logger=None)
+            clip.audio.write_audiofile(_gpath("voiceover.mp3"), logger=None)
         else:
             warning = "影片沒有音軌，無法自動上字幕"
         clip.close()
     except Exception as e:
         warning = f"音軌抽取失敗（仍可剪輯）：{e}"
-    return {"success": True, "video_url": "/assets/generated/final_composite.mp4", "warning": warning}
+    return {"success": True, "video_url": _gurl("final_composite.mp4"), "warning": warning}
 
 # --- Whisper 自動字幕：把配音轉成逐句時間軸 ---
 @app.post("/api/transcribe")
@@ -1069,7 +1085,7 @@ def transcribe():
     key = _key("OPENAI_API_KEY")
     if not key:
         return {"success": False, "error": "OPENAI_API_KEY 未設定，請填入 .env"}
-    audio = "generated_assets/voiceover.mp3"
+    audio = _gpath("voiceover.mp3")
     if not os.path.exists(audio):
         return {"success": False, "error": "找不到配音，請先在 Step 1 生成 voiceover.mp3"}
     try:
@@ -1098,10 +1114,12 @@ def _asset_local(url):
     if not url:
         return None
     u = url.split("?")[0]
-    if u.startswith("/assets/broll/"):
-        return "broll_assets/" + u[len("/assets/broll/"):]
+    if u.startswith("/assets/work/"):                       # 新：session 路徑
+        return os.path.join(WORK_ROOT, u[len("/assets/work/"):])
+    if u.startswith("/assets/broll/"):                      # 向後相容
+        return _bpath(os.path.basename(u))
     if u.startswith("/assets/generated/"):
-        return "generated_assets/" + u[len("/assets/generated/"):]
+        return _gpath(os.path.basename(u))
     return None
 
 # 字型 key -> 後端字型檔（對應前端 FONTS；找不到時往後備援）
@@ -1182,13 +1200,13 @@ def _cjk_font(size, key="heiti"):
 
 @app.post("/api/render")
 def render_video():
-    base_path = "generated_assets/final_composite.mp4"
+    base_path = _gpath("final_composite.mp4")
     if not os.path.exists(base_path):
         return {"success": False, "error": "找不到底層影片，請先在 Step 4 生成成片或上傳影片"}
     subs, brolls = [], []
-    if os.path.exists(PROJECT_PATH):
+    if os.path.exists(_gpath("project.json")):
         try:
-            with open(PROJECT_PATH, encoding="utf-8") as f:
+            with open(_gpath("project.json"), encoding="utf-8") as f:
                 proj = json.load(f)
             subs = proj.get("subtitles") or []
             brolls = proj.get("brolls") or []
@@ -1280,7 +1298,7 @@ def render_video():
                     draw.text((cx, y), ln, font=fnt, fill=fill, anchor="ma", stroke_width=sw, stroke_fill=stroke)
             return np.array(img)
 
-        out_path = "generated_assets/final_render.mp4"
+        out_path = _gpath("final_render.mp4")
         VideoClip(make_frame, duration=duration).with_audio(base.audio).write_videofile(
             out_path, fps=fps, codec="libx264", audio_codec="aac", logger=None, threads=4)
         base.close()
@@ -1289,13 +1307,13 @@ def render_video():
                 src.close()
     except Exception as e:
         return {"success": False, "error": f"render 失敗：{e}"}
-    return {"success": True, "video_url": "/assets/generated/final_render.mp4"}
+    return {"success": True, "video_url": _gurl("final_render.mp4")}
 
 @app.get("/api/project/load")
 def load_project():
     """讀回最近一次儲存的專案；尚無存檔時回 exists=False。"""
-    if not os.path.exists(PROJECT_PATH):
+    if not os.path.exists(_gpath("project.json")):
         return {"exists": False}
-    with open(PROJECT_PATH, "r", encoding="utf-8") as f:
+    with open(_gpath("project.json"), "r", encoding="utf-8") as f:
         data = json.load(f)
     return {"exists": True, "project": data}

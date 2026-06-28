@@ -123,12 +123,12 @@ def fetch_and_download_pexels_video(query, output_dir, index, pick=0, pexels_key
         
     return None
 
-def generate_broll_plan(transcription_json, output_plan_json, openai_key=None, pexels_key=None):
+def generate_broll_plan(transcription_json, output_plan_json, openai_key=None, pexels_key=None, out_dir="broll_assets"):
     """
     主控制函數：分析、搜尋、下載並輸出 B-Roll 計劃表
     """
-    # 建立下載目錄
-    assets_dir = "broll_assets"
+    # 下載目錄（每個 session 各自一份）
+    assets_dir = out_dir
     os.makedirs(assets_dir, exist_ok=True)
 
     # 1. 呼叫 GPT-4o 分析點位
